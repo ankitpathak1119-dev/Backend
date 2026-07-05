@@ -22,15 +22,34 @@ import PendingMessage      from "./models/PendingMessage.js";
 import UploadedFile        from "./models/UploadedFile.js";
 
 // ── Firebase Admin ────────────────────────────────────────────────────────────
-const require        = createRequire(import.meta.url);
-const serviceAccount = require("./firebase-service-account.json");
-let fcmMessaging     = null;
+const require = createRequire(import.meta.url);
+let serviceAccount = null;
+let fcmMessaging = null;
+
 try {
-  initializeApp({ credential: cert(serviceAccount) });
-  fcmMessaging = getMessaging();
-  console.log("✅ Firebase initialized:", serviceAccount.project_id);
-} catch (err) {
-  console.error("❌ Firebase init FAILED:", err.message);
+  // Try loading from local file
+  serviceAccount = require("./firebase-service-account.json");
+} catch (e) {
+  // Fallback to Environment Variable on Render/Cloud
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try {
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    } catch (parseErr) {
+      console.error("❌ Failed to parse FIREBASE_SERVICE_ACCOUNT env var:", parseErr.message);
+    }
+  } else {
+    console.warn("⚠️ Firebase service account missing. FCM notifications will be disabled.");
+  }
+}
+
+if (serviceAccount) {
+  try {
+    initializeApp({ credential: cert(serviceAccount) });
+    fcmMessaging = getMessaging();
+    console.log("✅ Firebase initialized:", serviceAccount.project_id);
+  } catch (err) {
+    console.error("❌ Firebase init FAILED:", err.message);
+  }
 }
 
 const app    = express();
