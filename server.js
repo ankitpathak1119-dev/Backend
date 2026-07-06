@@ -90,8 +90,7 @@ app.get("/", (_, res) => res.json({ status: "ok" }));
 app.get("/health", (_, res) => res.json({
   status:      "ok",
   mongo:       mongoose.connection.readyState === 1 ? "connected" : "disconnected",
-  online
-    Users: onlineUsers.size,
+  onlineUsers: onlineUsers.size,
   firebase:    fcmMessaging ? "ok" : "FAILED",
 }));
 
