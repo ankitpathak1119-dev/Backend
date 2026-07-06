@@ -40,6 +40,8 @@ try {
   } else {
     console.warn("⚠️ Firebase service account missing. FCM notifications will be disabled.");
   }
+  if (serviceAccount && typeof serviceAccount.private_key === 'string') {
+    serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
 }
 
 if (serviceAccount) {
@@ -88,7 +90,8 @@ app.get("/", (_, res) => res.json({ status: "ok" }));
 app.get("/health", (_, res) => res.json({
   status:      "ok",
   mongo:       mongoose.connection.readyState === 1 ? "connected" : "disconnected",
-  onlineUsers: onlineUsers.size,
+  online
+    Users: onlineUsers.size,
   firebase:    fcmMessaging ? "ok" : "FAILED",
 }));
 
