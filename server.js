@@ -46,6 +46,9 @@ try {
 }
 if (serviceAccount) {
   try {
+    if (serviceAccount.private_key) {
+      serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+    }
     initializeApp({ credential: cert(serviceAccount) });
     fcmMessaging = getMessaging();
     console.log("✅ Firebase initialized:", serviceAccount.project_id);
