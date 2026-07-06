@@ -316,11 +316,20 @@ io.on("connection", (socket) => {
     console.log(`📨 Private: ${mask(sender)} → ${mask(to)}`);
 
     if (onlineUsers.has(to)) {
-      // Online → deliver directly
+      // Online -> deliver directly
       io.to(to).emit("private_message", payload);
       io.to(sender).emit("chat:delivered", { messageId: msgId });
-      if (activeChats.get(to) === (chatId || sender))
+      if (activeChats.get(to) === (chatId || sender)) {
         io.to(sender).emit("chat:seen", { messageId: msgId });
+      } else {
+        const recipient = await User.findOne({ username: to }, { fcmToken: 1 });
+        await sendPush({
+          fcmToken: recipient?.fcmToken,
+          fromUser: sender,
+          chatId:   sender,
+          chatType: "private",
+        });
+      }
     } else {
       // Offline → store + FCM
       if (hasEncrypted) {
@@ -403,17 +412,23 @@ io.on("connection", (socket) => {
             { upsert: true, new: true }
           ).catch((e) => console.error("⚠️  Group pending store error:", e.message));
         }
+      }
 
-        // Send FCM
+      // Send FCM to everyone who is not currently reading this group.
+      // A web tab or background Android app can still keep the socket online,
+      // so "online" alone must not suppress push notifications.
+      const pushMembers = groupDoc.members.filter(
+        (m) => m !== sender && activeChats.get(m) !== group
+      );
+
+      for (const member of pushMembers) {
         const u = await User.findOne({ username: member }, { fcmToken: 1 });
-        if (u?.fcmToken) {
-          await sendPush({
-            fcmToken: u.fcmToken,
-            fromUser: sender,
-            chatId:   group,        // ✅ group: chatId = group name so Flutter opens group chat
-            chatType: "group",
-          });
-        }
+        await sendPush({
+          fcmToken: u?.fcmToken,
+          fromUser: sender,
+          chatId:   group,        // group: chatId = group name so Flutter opens group chat
+          chatType: "group",
+        });
       }
     } catch (err) {
       console.error("⚠️  Group message error:", err.message);
