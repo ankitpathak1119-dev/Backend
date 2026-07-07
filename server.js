@@ -1,25 +1,25 @@
-import express       from "express";
-import cors          from "cors";
-import http          from "http";
-import { Server }   from "socket.io";
-import mongoose      from "mongoose";
-import jwt           from "jsonwebtoken";
+import express from "express";
+import cors from "cors";
+import http from "http";
+import { Server } from "socket.io";
+import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
 import { createRequire } from "module";
 import { cert, initializeApp } from "firebase-admin/app";
-import { getMessaging }        from "firebase-admin/messaging";
+import { getMessaging } from "firebase-admin/messaging";
 
-import authRoutes          from "./routes/auth.js";
+import authRoutes from "./routes/auth.js";
 import deleteAccountRoutes from "./routes/delete_account.js";
-import contactsRoutes      from "./routes/contacts.js";
-import groupsRoutes        from "./routes/groups.js";
-import messagesRoutes      from "./routes/messages.js";
-import uploadRoutes        from "./routes/upload.js";
-import Group               from "./models/Group.js";
-import path                from "path";
-import fs                  from "fs";
-import User                from "./models/User.js";
-import PendingMessage      from "./models/PendingMessage.js";
-import UploadedFile        from "./models/UploadedFile.js";
+import contactsRoutes from "./routes/contacts.js";
+import groupsRoutes from "./routes/groups.js";
+import messagesRoutes from "./routes/messages.js";
+import uploadRoutes from "./routes/upload.js";
+import Group from "./models/Group.js";
+import path from "path";
+import fs from "fs";
+import User from "./models/User.js";
+import PendingMessage from "./models/PendingMessage.js";
+import UploadedFile from "./models/UploadedFile.js";
 
 // ── Firebase Admin ────────────────────────────────────────────────────────────
 const require = createRequire(import.meta.url);
@@ -42,7 +42,7 @@ try {
   }
   if (serviceAccount && typeof serviceAccount.private_key === 'string') {
     serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
-}
+  }
 }
 if (serviceAccount) {
   try {
@@ -57,9 +57,9 @@ if (serviceAccount) {
   }
 }
 
-const app    = express();
+const app = express();
 const server = http.createServer(app);
-const io     = new Server(server, {
+const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] },
   transports: ["websocket", "polling"],
 });
@@ -70,7 +70,7 @@ app.use(cors());
 app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || "securechat_jwt_secret_key";
-const MONGO_URI  = process.env.MONGO_URI  ||
+const MONGO_URI = process.env.MONGO_URI ||
   "mongodb+srv://securechat_user:An%401728396497@cluster0.bm68qog.mongodb.net/secure_chat";
 
 mongoose.connect(MONGO_URI)
@@ -78,23 +78,23 @@ mongoose.connect(MONGO_URI)
   .catch((err) => console.error("❌ MongoDB error:", err));
 
 // ── HTTP Routes ───────────────────────────────────────────────────────────────
-app.use("/auth",     authRoutes);
-app.use("/auth",     deleteAccountRoutes);
+app.use("/auth", authRoutes);
+app.use("/auth", deleteAccountRoutes);
 app.use("/contacts", contactsRoutes(io));
-app.use("/groups",   groupsRoutes);
+app.use("/groups", groupsRoutes);
 app.use("/messages", messagesRoutes);
-app.use("/upload",   uploadRoutes);
-app.use("/uploads",  express.static(path.join(process.cwd(), "uploads"), {
+app.use("/upload", uploadRoutes);
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads"), {
   maxAge: "1h",  // short-term cache — files are ephemeral
   etag: true,
 }));
 
 app.get("/", (_, res) => res.json({ status: "ok" }));
 app.get("/health", (_, res) => res.json({
-  status:      "ok",
-  mongo:       mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+  status: "ok",
+  mongo: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
   onlineUsers: onlineUsers.size,
-  firebase:    fcmMessaging ? "ok" : "FAILED",
+  firebase: fcmMessaging ? "ok" : "FAILED",
 }));
 
 // ── Debug: FCM token check ────────────────────────────────────────────────────
@@ -107,14 +107,14 @@ app.get("/debug/fcm/:username", async (req, res) => {
 // ═════════════════════════════════════════════════════════════════════════════
 // IN-MEMORY STATE
 // ═════════════════════════════════════════════════════════════════════════════
-const onlineUsers          = new Map(); // username → socketId
-const activeChats          = new Map(); // username → chatId   (private OR group name)
+const onlineUsers = new Map(); // username → socketId
+const activeChats = new Map(); // username → chatId   (private OR group name)
 const joinedGroupsBySocket = new Map(); // socketId → Set<groupName>
-const groupSeen            = new Map(); // messageId → { totalMembers, seenCount, ... }
+const groupSeen = new Map(); // messageId → { totalMembers, seenCount, ... }
 
 global.onlineUsers = onlineUsers;
 
-const mask = (u) => (!u || u.length < 3) ? "***" : `${u[0]}***${u[u.length-1]}`;
+const mask = (u) => (!u || u.length < 3) ? "***" : `${u[0]}***${u[u.length - 1]}`;
 
 function verifyToken(token) {
   if (!token) return null;
@@ -138,7 +138,7 @@ async function sendPush({ fcmToken, fromUser, chatId, chatType }) {
   }
 
   const isGroup = chatType === "group";
-  const title   = isGroup
+  const title = isGroup
     ? `New message in ${chatId}`          // chatId = group name
     : `New message from ${fromUser}`;     // chatId = sender username
 
@@ -147,17 +147,17 @@ async function sendPush({ fcmToken, fromUser, chatId, chatType }) {
       token: fcmToken,
       notification: { title, body: "Tap to open" },
       data: {
-        type:     chatType,   // "private" | "group"
-        chatId:   chatId,     // group name OR sender username
+        type: chatType,   // "private" | "group"
+        chatId: chatId,     // group name OR sender username
         fromUser: fromUser,
       },
       android: {
         priority: "high",
         notification: {
-          channelId:             "secure_chat_messages",
-          sound:                 "default",
-          priority:              "high",
-          defaultSound:          true,
+          channelId: "secure_chat_messages",
+          sound: "default",
+          priority: "high",
+          defaultSound: true,
           defaultVibrateTimings: true,
         },
       },
@@ -167,9 +167,9 @@ async function sendPush({ fcmToken, fromUser, chatId, chatType }) {
     console.error(`❌ FCM error [${chatType}] from ${mask(fromUser)}:`, err.code, err.message);
     // Clear invalid/expired token so we don't retry
     if (["messaging/invalid-registration-token",
-         "messaging/registration-token-not-registered",
-         "messaging/invalid-argument"].includes(err.code)) {
-      await User.updateOne({ fcmToken }, { $set: { fcmToken: null } }).catch(() => {});
+      "messaging/registration-token-not-registered",
+      "messaging/invalid-argument"].includes(err.code)) {
+      await User.updateOne({ fcmToken }, { $set: { fcmToken: null } }).catch(() => { });
       console.log("🗑️  Cleared invalid FCM token");
     }
   }
@@ -213,7 +213,7 @@ io.on("connection", (socket) => {
       onlineUsers.set(username, socket.id);
 
       io.emit("presence:update", { userId: username, status: "online" });
-      
+
       const busyList = [];
       const inChatWithMeList = [];
       for (const [u, c] of activeChats.entries()) {
@@ -223,8 +223,8 @@ io.on("connection", (socket) => {
           busyList.push(u);
         }
       }
-      
-      socket.emit("presence:snapshot", { 
+
+      socket.emit("presence:snapshot", {
         onlineUsers: [...onlineUsers.keys()],
         busyUsers: busyList,
         inChatWithMeUsers: inChatWithMeList
@@ -239,23 +239,24 @@ io.on("connection", (socket) => {
             group:            msg.groupName,
             from:             msg.from,
             encryptedMessage: msg.encryptedMessage,
+            message:          msg.message,
             messageId:        msg.messageId,
             timestamp:        msg.timestamp,
             isPending:        true,
           });
         } else {
           socket.emit("private_message", {
-            from:             msg.from,
+            from: msg.from,
             encryptedMessage: msg.encryptedMessage,
-            messageId:        msg.messageId,
-            timestamp:        msg.timestamp,
-            isPending:        true,
+            messageId: msg.messageId,
+            timestamp: msg.timestamp,
+            isPending: true,
           });
 
           // ✅ Notify sender that message was delivered!
           const senderSocketId = onlineUsers.get(msg.from);
           if (senderSocketId) {
-             io.to(senderSocketId).emit("chat:delivered", { messageId: msg.messageId });
+            io.to(senderSocketId).emit("chat:delivered", { messageId: msg.messageId });
           }
         }
       }
@@ -285,7 +286,7 @@ io.on("connection", (socket) => {
     for (const [other, otherChat] of activeChats.entries()) {
       if (other !== socket.username && otherChat === chatId && onlineUsers.has(other)) {
         io.to(socket.username).emit("presence:active", { userId: other });
-        io.to(other).emit("presence:active",           { userId: socket.username });
+        io.to(other).emit("presence:active", { userId: socket.username });
       }
     }
 
@@ -314,7 +315,7 @@ io.on("connection", (socket) => {
 
     // Tell everyone they are no longer busy, and clear isWithMe
     io.emit("presence:busy", { userId: socket.username, isBusy: false, isWithMe: false });
-    
+
     // If they were chatting with someone, re-evaluate if that someone is still busy
     // Actually, io.emit covers everyone, so everyone will now see them as not busy.
     if (chat) {
@@ -342,12 +343,12 @@ io.on("connection", (socket) => {
   // ── PRIVATE MESSAGE ───────────────────────────────────────────────────────
   socket.on("private_message", async ({ to, from, message, encryptedMessage, messageId, chatId }) => {
     if (!to) return;
-    const sender       = socket.username || from;
+    const sender = socket.username || from;
     const hasEncrypted = encryptedMessage != null && encryptedMessage !== "";
-    const hasPlain     = message != null && message !== "";
+    const hasPlain = message != null && message !== "";
     if (!hasEncrypted && !hasPlain) return;
 
-    const msgId   = messageId || `${Date.now()}_${sender}`;
+    const msgId = messageId || `${Date.now()}_${sender}`;
     const payload = { from: sender, message, encryptedMessage, messageId: msgId, timestamp: new Date().toISOString() };
 
     console.log(`📨 Private: ${mask(sender)} → ${mask(to)}`);
@@ -363,7 +364,7 @@ io.on("connection", (socket) => {
         await sendPush({
           fcmToken: recipient?.fcmToken,
           fromUser: sender,
-          chatId:   sender,
+          chatId: sender,
           chatType: "private",
         });
       }
@@ -380,7 +381,7 @@ io.on("connection", (socket) => {
           await sendPush({
             fcmToken: recipient?.fcmToken,
             fromUser: sender,
-            chatId:   sender,        // ✅ private: chatId = sender so Flutter opens private chat
+            chatId: sender,        // ✅ private: chatId = sender so Flutter opens private chat
             chatType: "private",
           });
           console.log(`💾 Stored private pending for ${mask(to)}`);
@@ -394,22 +395,22 @@ io.on("connection", (socket) => {
   // ── GROUP MESSAGE ─────────────────────────────────────────────────────────
   socket.on("group_message", async ({ group, from, message, encryptedMessage, messageId }) => {
     if (!group) return;
-    const sender       = socket.username || from;
+    const sender = socket.username || from;
     const hasEncrypted = encryptedMessage != null && encryptedMessage !== "";
-    const hasPlain     = message != null && message !== "";
+    const hasPlain = message != null && message !== "";
     if (!hasEncrypted && !hasPlain) return;
 
-    const msgId   = messageId || `${Date.now()}_${Math.random()}`;
+    const msgId = messageId || `${Date.now()}_${Math.random()}`;
     const content = encryptedMessage || message;
 
     // ✅ Deliver to ALL online group members via socket room
     io.to(group).emit("group_message", {
       group,
-      from:             sender,
-      message:          hasPlain     ? message          : undefined,
+      from: sender,
+      message: hasPlain ? message : undefined,
       encryptedMessage: hasEncrypted ? encryptedMessage : undefined,
-      messageId:        msgId,
-      timestamp:        new Date().toISOString(),
+      messageId: msgId,
+      timestamp: new Date().toISOString(),
     });
 
     console.log(`📨 Group: ${mask(sender)} → ${group}`);
@@ -418,12 +419,21 @@ io.on("connection", (socket) => {
       const groupDoc = await Group.findOne({ name: group }).lean();
       if (!groupDoc) return;
 
+      let viewOnceUrl = null;
+      if (hasPlain && message && message.includes('"isViewOnce":true')) {
+        try {
+          const match = message.match(/"url":"(.*?)"/);
+          if (match) viewOnceUrl = match[1];
+        } catch (e) {}
+      }
+
       groupSeen.set(msgId, {
         totalMembers: groupDoc.members.length,
-        seenCount:    1,
-        senderId:     sender,
-        groupId:      group,
-        createdAt:    Date.now(),
+        seenCount: 1,
+        senderId: sender,
+        groupId: group,
+        viewOnceUrl: viewOnceUrl,
+        createdAt: Date.now(),
       });
 
       // ✅ Only offline members → store pending + send FCM
@@ -435,20 +445,19 @@ io.on("connection", (socket) => {
 
       for (const member of offlineMembers) {
         // Store pending per member with groupName field
-        if (hasEncrypted) {
-          await PendingMessage.findOneAndUpdate(
-            { messageId: msgId, to: member },
-            {
-              to:               member,
-              from:             sender,
-              encryptedMessage: encryptedMessage,
-              messageId:        `${msgId}_${member}`,  // unique per member
-              chatType:         "group",
-              groupName:        group,
-            },
-            { upsert: true, new: true }
-          ).catch((e) => console.error("⚠️  Group pending store error:", e.message));
-        }
+        await PendingMessage.findOneAndUpdate(
+          { messageId: msgId, to: member },
+          {
+            to: member,
+            from: sender,
+            encryptedMessage: hasEncrypted ? encryptedMessage : undefined,
+            message: hasPlain ? message : undefined,
+            messageId: `${msgId}_${member}`,  // unique per member
+            chatType: "group",
+            groupName: group,
+          },
+          { upsert: true, new: true }
+        ).catch((e) => console.error("⚠️  Group pending store error:", e.message));
       }
 
       // Send FCM to everyone who is not currently reading this group.
@@ -463,7 +472,7 @@ io.on("connection", (socket) => {
         await sendPush({
           fcmToken: u?.fcmToken,
           fromUser: sender,
-          chatId:   group,        // group: chatId = group name so Flutter opens group chat
+          chatId: group,        // group: chatId = group name so Flutter opens group chat
           chatType: "group",
         });
       }
@@ -534,20 +543,37 @@ function _markGroupMessagesSeen(username, chatId) {
     if (data.groupId === chatId) _incrementGroupSeen(username, mid);
   }
 }
+function asyncDeleteViewOnceFile(fileUrl) {
+  if (!fileUrl) return;
+  const fullPath = path.join(process.cwd(), fileUrl);
+  fs.unlink(fullPath, (err) => {
+    if (err && err.code !== "ENOENT") console.error("⚠️  View Once delete error:", err.message);
+    else if (!err) console.log(`🗑️  Deleted view-once file after all seen: ${fileUrl}`);
+  });
+  // Also try thumb
+  const thumbName = `thumb_${path.basename(fileUrl)}`;
+  const thumbPath = path.join(process.cwd(), "uploads", "thumbs", thumbName);
+  fs.unlink(thumbPath, () => {});
+}
+
 function _incrementGroupSeen(username, messageId) {
   const data = groupSeen.get(messageId);
   if (!data) return;
   data.seenCount++;
   if (data.seenCount >= data.totalMembers) {
-    io.to(data.senderId).emit("chat:seen", { messageId });
+    io.to(data.senderId).emit("chat:seen", { messageId, status: "all" });
+    if (data.viewOnceUrl) asyncDeleteViewOnceFile(data.viewOnceUrl);
     groupSeen.delete(messageId);
+  } else {
+    io.to(data.senderId).emit("chat:seen", { messageId, status: "partial" });
   }
 }
 function _handleMemberDisconnect(username) {
   for (const [mid, data] of groupSeen.entries()) {
     data.totalMembers = Math.max(data.seenCount + 1, data.totalMembers - 1);
     if (data.seenCount >= data.totalMembers) {
-      io.to(data.senderId).emit("chat:seen", { messageId: mid });
+      io.to(data.senderId).emit("chat:seen", { messageId: mid, status: "all" });
+      if (data.viewOnceUrl) asyncDeleteViewOnceFile(data.viewOnceUrl);
       groupSeen.delete(mid);
     }
   }
@@ -616,11 +642,11 @@ setInterval(async () => {
     for (const file of oldFiles) {
       if (file.filePath) {
         const fullPath = path.join(uploadsDir, file.filePath);
-        fs.unlink(fullPath, () => {});
+        fs.unlink(fullPath, () => { });
       }
       if (file.thumbPath) {
         const thumbFullPath = path.join(uploadsDir, file.thumbPath);
-        fs.unlink(thumbFullPath, () => {});
+        fs.unlink(thumbFullPath, () => { });
       }
     }
 
