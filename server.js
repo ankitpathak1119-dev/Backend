@@ -540,7 +540,9 @@ io.on("connection", (socket) => {
 // ── Group Seen Helpers ────────────────────────────────────────────────────────
 function _markGroupMessagesSeen(username, chatId) {
   for (const [mid, data] of groupSeen.entries()) {
-    if (data.groupId === chatId) _incrementGroupSeen(username, mid);
+    if (data.groupId === chatId && !data.viewOnceUrl) {
+      _incrementGroupSeen(username, mid);
+    }
   }
 }
 function asyncDeleteViewOnceFile(fileUrl) {
