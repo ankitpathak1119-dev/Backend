@@ -94,4 +94,38 @@ router.post("/", upload.single("file"), async (req, res) => {
   });
 });
 
+router.delete("/", async (req, res) => {
+  const { fileUrl } = req.body;
+  if (!fileUrl) {
+    return res.status(400).json({ error: "No fileUrl provided" });
+  }
+
+  try {
+    const fileRecord = await UploadedFile.findOne({ filePath: fileUrl });
+    if (!fileRecord) {
+      return res.status(404).json({ error: "File not found" });
+    }
+
+    const uploadsDir = process.cwd();
+    
+    if (fileRecord.filePath) {
+      const fullPath = path.join(uploadsDir, fileRecord.filePath);
+      fs.unlink(fullPath, () => {});
+    }
+    
+    if (fileRecord.thumbPath) {
+      const thumbFullPath = path.join(uploadsDir, fileRecord.thumbPath);
+      fs.unlink(thumbFullPath, () => {});
+    }
+
+    await UploadedFile.deleteOne({ _id: fileRecord._id });
+    
+    console.log(`🗑️  Deleted view-once file: ${fileUrl}`);
+    res.json({ success: true, message: "File deleted successfully" });
+  } catch (err) {
+    console.error("⚠️  Delete file error:", err.message);
+    res.status(500).json({ error: "Server error during deletion" });
+  }
+});
+
 export default router;
