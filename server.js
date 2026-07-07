@@ -213,9 +213,15 @@ io.on("connection", (socket) => {
       onlineUsers.set(username, socket.id);
 
       io.emit("presence:update", { userId: username, status: "online" });
+      
+      const busyList = [];
+      for (const [u, c] of activeChats.entries()) {
+        if (c !== username) busyList.push(u);
+      }
+      
       socket.emit("presence:snapshot", { 
         onlineUsers: [...onlineUsers.keys()],
-        busyUsers: [...activeChats.keys()]
+        busyUsers: busyList
       });
 
       // ── Deliver ALL pending messages (private + group) on login ───────────
@@ -258,7 +264,10 @@ io.on("connection", (socket) => {
     activeChats.set(socket.username, chatId);
     _markGroupMessagesSeen(socket.username, chatId);
 
-    io.emit("presence:busy", { userId: socket.username, isBusy: true });
+    // Tell everyone EXCEPT the person they are chatting with that they are busy
+    socket.broadcast.except(chatId).emit("presence:busy", { userId: socket.username, isBusy: true });
+    // Tell the person they are chatting with that they are NOT busy (so they appear as Online)
+    io.to(chatId).emit("presence:busy", { userId: socket.username, isBusy: false });
 
     // ✅ Do NOT delete here — wait for messages_read confirmation from Flutter
     for (const [other, otherChat] of activeChats.entries()) {
@@ -287,6 +296,9 @@ io.on("connection", (socket) => {
     activeChats.delete(socket.username);
 
     io.emit("presence:busy", { userId: socket.username, isBusy: false });
+    
+    // If they were chatting with someone, re-evaluate if that someone is still busy
+    // Actually, io.emit covers everyone, so everyone will now see them as not busy.
     if (chat) {
       // ✅ Delete only THIS user's pending for this chat AFTER close.
       PendingMessage.deleteMany({
