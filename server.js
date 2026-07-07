@@ -213,7 +213,10 @@ io.on("connection", (socket) => {
       onlineUsers.set(username, socket.id);
 
       io.emit("presence:update", { userId: username, status: "online" });
-      socket.emit("presence:snapshot", { onlineUsers: [...onlineUsers.keys()] });
+      socket.emit("presence:snapshot", { 
+        onlineUsers: [...onlineUsers.keys()],
+        busyUsers: [...activeChats.keys()]
+      });
 
       // ── Deliver ALL pending messages (private + group) on login ───────────
       const pending = await PendingMessage.find({ to: username }).sort({ timestamp: 1 });
@@ -255,6 +258,8 @@ io.on("connection", (socket) => {
     activeChats.set(socket.username, chatId);
     _markGroupMessagesSeen(socket.username, chatId);
 
+    io.emit("presence:busy", { userId: socket.username, isBusy: true });
+
     // ✅ Do NOT delete here — wait for messages_read confirmation from Flutter
     for (const [other, otherChat] of activeChats.entries()) {
       if (other !== socket.username && otherChat === chatId && onlineUsers.has(other)) {
@@ -280,6 +285,8 @@ io.on("connection", (socket) => {
     if (!socket.username) return;
     const chat = chatId || activeChats.get(socket.username);
     activeChats.delete(socket.username);
+
+    io.emit("presence:busy", { userId: socket.username, isBusy: false });
     if (chat) {
       // ✅ Delete only THIS user's pending for this chat AFTER close.
       PendingMessage.deleteMany({
@@ -484,6 +491,7 @@ io.on("connection", (socket) => {
       activeChats.delete(socket.username);
       _handleMemberDisconnect(socket.username);
       io.emit("presence:update", { userId: socket.username, status: "offline" });
+      io.emit("presence:busy", { userId: socket.username, isBusy: false });
     }
     joinedGroupsBySocket.delete(socket.id);
     console.log("🔌 Disconnected:", socket.id);
