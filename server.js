@@ -266,8 +266,8 @@ io.on("connection", (socket) => {
 
     // Tell everyone EXCEPT the person they are chatting with that they are busy
     socket.broadcast.except(chatId).emit("presence:busy", { userId: socket.username, isBusy: true });
-    // Tell the person they are chatting with that they are NOT busy (so they appear as Online)
-    io.to(chatId).emit("presence:busy", { userId: socket.username, isBusy: false });
+    // Tell the person they are chatting with that they are in chat with them
+    io.to(chatId).emit("presence:busy", { userId: socket.username, isBusy: false, isWithMe: true });
 
     // ✅ Do NOT delete here — wait for messages_read confirmation from Flutter
     for (const [other, otherChat] of activeChats.entries()) {
@@ -295,7 +295,8 @@ io.on("connection", (socket) => {
     const chat = chatId || activeChats.get(socket.username);
     activeChats.delete(socket.username);
 
-    io.emit("presence:busy", { userId: socket.username, isBusy: false });
+    // Tell everyone they are no longer busy, and clear isWithMe
+    io.emit("presence:busy", { userId: socket.username, isBusy: false, isWithMe: false });
     
     // If they were chatting with someone, re-evaluate if that someone is still busy
     // Actually, io.emit covers everyone, so everyone will now see them as not busy.
