@@ -251,6 +251,12 @@ io.on("connection", (socket) => {
             timestamp:        msg.timestamp,
             isPending:        true,
           });
+
+          // ✅ Notify sender that message was delivered!
+          const senderSocketId = onlineUsers.get(msg.from);
+          if (senderSocketId) {
+             io.to(senderSocketId).emit("chat:delivered", { messageId: msg.messageId });
+          }
         }
       }
       if (pending.length > 0)
@@ -281,6 +287,11 @@ io.on("connection", (socket) => {
         io.to(socket.username).emit("presence:active", { userId: other });
         io.to(other).emit("presence:active",           { userId: socket.username });
       }
+    }
+
+    // ✅ Notify the sender that we have seen their messages
+    if (onlineUsers.has(chatId)) {
+      io.to(chatId).emit("chat:seen", { messageId: 'ALL' });
     }
   });
 
