@@ -215,13 +215,19 @@ io.on("connection", (socket) => {
       io.emit("presence:update", { userId: username, status: "online" });
       
       const busyList = [];
+      const inChatWithMeList = [];
       for (const [u, c] of activeChats.entries()) {
-        if (c !== username) busyList.push(u);
+        if (c === username) {
+          inChatWithMeList.push(u);
+        } else {
+          busyList.push(u);
+        }
       }
       
       socket.emit("presence:snapshot", { 
         onlineUsers: [...onlineUsers.keys()],
-        busyUsers: busyList
+        busyUsers: busyList,
+        inChatWithMeUsers: inChatWithMeList
       });
 
       // ── Deliver ALL pending messages (private + group) on login ───────────
