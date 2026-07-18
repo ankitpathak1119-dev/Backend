@@ -6,11 +6,14 @@ import mongoose from "mongoose";
 const pendingMessageSchema = new mongoose.Schema({
   to: { type: String, required: true, index: true },
   from: { type: String, required: true },
-  encryptedMessage: { type: String, required: true }, // encrypted blob only
+  encryptedMessage: { type: String, default: "" }, // encrypted blob only
+  message: { type: String, default: null }, // Only for plain text system messages or deleted states
   messageId: { type: String, required: true, unique: true },
   chatType: { type: String, enum: ["private", "group"], default: "private" },
   groupName: { type: String, default: null },
   isAction: { type: Boolean, default: false },
+  isDeleted: { type: Boolean, default: false },
+  isEdited: { type: Boolean, default: false },
   actionData: { type: Object, default: null }, // Store action details
   timestamp: { type: Date, default: Date.now },
   expiresAt: {

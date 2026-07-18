@@ -518,6 +518,29 @@ io.on("connection", (socket) => {
         io.to(to).emit("message_action", actionData);
       } else {
         try {
+          if (action === 'delete') {
+            // Update the original message instead of creating a new action message
+            // so the offline user sees it as deleted immediately
+            await PendingMessage.findOneAndUpdate(
+              { messageId, to },
+              { 
+                isDeleted: true,
+                message: "🚫 This message was deleted",
+                encryptedMessage: "" // Clear encrypted payload
+              }
+            );
+          } else if (action === 'edit') {
+            await PendingMessage.findOneAndUpdate(
+              { messageId, to },
+              {
+                isEdited: true,
+                message: newText,
+                encryptedMessage: "" // Usually it should be re-encrypted, but we simplify for pending edit
+              }
+            );
+          }
+          
+          // Also create the action just in case they have the old message cached locally
           await PendingMessage.create({
             to,
             from: sender,
