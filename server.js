@@ -233,7 +233,9 @@ io.on("connection", (socket) => {
       // ── Deliver ALL pending messages (private + group) on login ───────────
       const pending = await PendingMessage.find({ to: username }).sort({ timestamp: 1 });
       for (const msg of pending) {
-        if (msg.chatType === "group") {
+        if (msg.isAction) {
+          socket.emit("message_action", msg.actionData);
+        } else if (msg.chatType === "group") {
           // ✅ Group pending → emit as group_message so Flutter shows it in group chat
           socket.emit("group_message", {
             group:            msg.groupName,
@@ -478,6 +480,57 @@ io.on("connection", (socket) => {
       }
     } catch (err) {
       console.error("⚠️  Group message error:", err.message);
+    }
+  });
+
+  // ── MESSAGE ACTION (Delete/Edit) ──────────────────────────────────────────
+  socket.on("message_action", async ({ type, action, messageId, to, group, from, newText }) => {
+    const sender = socket.username || from;
+    const actionData = { type, action, messageId, from: sender, newText, group };
+
+    if (group) {
+      // It's a group action
+      io.to(group).emit("message_action", actionData);
+
+      try {
+        const groupDoc = await Group.findOne({ name: group }).lean();
+        if (groupDoc) {
+          const offlineMembers = groupDoc.members.filter(m => m !== sender && !onlineUsers.has(m));
+          for (const member of offlineMembers) {
+            await PendingMessage.create({
+              to: member,
+              from: sender,
+              messageId: `${messageId}_action_${Date.now()}_${member}`, // unique
+              encryptedMessage: "ACTION",
+              chatType: "group",
+              groupName: group,
+              isAction: true,
+              actionData,
+            });
+          }
+        }
+      } catch (err) {
+        console.error("⚠️  Group action error:", err.message);
+      }
+    } else if (to) {
+      // It's a private action
+      if (onlineUsers.has(to)) {
+        io.to(to).emit("message_action", actionData);
+      } else {
+        try {
+          await PendingMessage.create({
+            to,
+            from: sender,
+            messageId: `${messageId}_action_${Date.now()}`,
+            encryptedMessage: "ACTION",
+            chatType: "private",
+            isAction: true,
+            actionData,
+          });
+        } catch (err) {
+          console.error("⚠️  Private action error:", err.message);
+        }
+      }
     }
   });
 

@@ -10,6 +10,8 @@ const pendingMessageSchema = new mongoose.Schema({
   messageId: { type: String, required: true, unique: true },
   chatType: { type: String, enum: ["private", "group"], default: "private" },
   groupName: { type: String, default: null },
+  isAction: { type: Boolean, default: false },
+  actionData: { type: Object, default: null }, // Store action details
   timestamp: { type: Date, default: Date.now },
   expiresAt: {
     type: Date,
