@@ -2,8 +2,10 @@ import express from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { EventEmitter } from "events";
 import UploadedFile from "../models/UploadedFile.js";
 
+export const uploadEvents = new EventEmitter();
 const router = express.Router();
 
 // Ensure uploads directory exists
@@ -18,12 +20,8 @@ if (!fs.existsSync(thumbDir)) {
 
 // Dynamic import for sharp (may not be installed on all systems)
 let sharp = null;
-try {
-  sharp = (await import("sharp")).default;
-  console.log("✅ Sharp loaded — thumbnail generation enabled");
-} catch (_) {
-  console.warn("⚠️  Sharp not installed — thumbnails disabled. Run: npm install sharp");
-}
+// Sharp disabled to prevent out of memory crashes on Render Free Tier
+console.warn("⚠️  Sharp disabled to prevent OOM on free tier.");
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -82,6 +80,32 @@ router.post("/", upload.single("file"), async (req, res) => {
   } catch (err) {
     console.error("⚠️  File tracking save error:", err.message);
     // Don't fail the upload — file is already saved
+  }
+
+  // Dispatch message event if this upload is a message
+  if (req.body.isMessage === 'true') {
+    const duration = parseInt(req.body.duration) || 0;
+    const fileMessage = {
+      type: req.file.mimetype,
+      url: fileUrl,
+      fileName: req.file.originalname,
+      size: req.file.size,
+      duration: duration
+    };
+    if (thumbnailUrl) fileMessage.thumbnailUrl = thumbnailUrl;
+    if (req.body.isViewOnce === 'true') {
+      fileMessage.isViewOnce = true;
+      fileMessage.viewOnceTimer = parseInt(req.body.viewOnceTimer) || 0;
+    }
+    
+    const msgString = `FILE::${JSON.stringify(fileMessage)}`;
+    uploadEvents.emit('fileMessageUploaded', {
+      from,
+      chatId,
+      chatType,
+      message: msgString,
+      messageId: req.body.messageId // Optional, can let server generate
+    });
   }
 
   res.json({

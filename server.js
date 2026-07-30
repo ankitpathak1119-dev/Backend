@@ -13,7 +13,7 @@ import deleteAccountRoutes from "./routes/delete_account.js";
 import contactsRoutes from "./routes/contacts.js";
 import groupsRoutes from "./routes/groups.js";
 import messagesRoutes from "./routes/messages.js";
-import uploadRoutes from "./routes/upload.js";
+import uploadRoutes, { uploadEvents } from "./routes/upload.js";
 import Group from "./models/Group.js";
 import path from "path";
 import fs from "fs";
@@ -174,6 +174,276 @@ async function sendPush({ fcmToken, fromUser, chatId, chatType }) {
     }
   }
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HELPER: DELIVER MESSAGES
+// ═════════════════════════════════════════════════════════════════════════════
+
+async function deliverPrivateMessage({ to, from, message, encryptedMessage, messageId, chatId }) {
+  if (!to) return;
+  const hasEncrypted = encryptedMessage != null && encryptedMessage !== "";
+  const hasPlain = message != null && message !== "";
+  if (!hasEncrypted && !hasPlain) return;
+
+  const msgId = messageId || `${Date.now()}_${from}`;
+  const payload = { from, message, encryptedMessage, messageId: msgId, timestamp: new Date().toISOString() };
+
+  console.log(`📨 Private: ${mask(from)} → ${mask(to)}`);
+
+  if (onlineUsers.has(to)) {
+    // Online -> deliver directly
+    io.to(to).emit("private_message", payload);
+    io.to(from).emit("chat:delivered", { messageId: msgId });
+    if (activeChats.get(to) === (chatId || from)) {
+      io.to(from).emit("chat:seen", { messageId: msgId });
+    } else {
+      const recipient = await User.findOne({ username: to }, { fcmToken: 1 });
+      await sendPush({
+        fcmToken: recipient?.fcmToken,
+        fromUser: from,
+        chatId: from,
+        chatType: "private",
+      });
+    }
+  } else {
+    // Offline → store + FCM
+    if (hasEncrypted || hasPlain) {
+      try {
+        await PendingMessage.findOneAndUpdate(
+          { messageId: msgId },
+          { to, from, encryptedMessage, message, messageId: msgId, chatType: "private" },
+          { upsert: true, new: true }
+        );
+        const recipient = await User.findOne({ username: to }, { fcmToken: 1 });
+        await sendPush({
+          fcmToken: recipient?.fcmToken,
+          fromUser: from,
+          chatId: from,
+          chatType: "private",
+        });
+        console.log(`💾 Stored private pending for ${mask(to)}`);
+      } catch (err) {
+        console.error("⚠️  Private store error:", err.message);
+      }
+    }
+  }
+}
+
+async function deliverGroupMessage({ group, from, message, encryptedMessage, messageId }) {
+  if (!group) return;
+  const hasEncrypted = encryptedMessage != null && encryptedMessage !== "";
+  const hasPlain = message != null && message !== "";
+  if (!hasEncrypted && !hasPlain) return;
+
+  const msgId = messageId || `${Date.now()}_${Math.random()}`;
+
+  io.to(group).emit("group_message", {
+    group,
+    from,
+    message: hasPlain ? message : undefined,
+    encryptedMessage: hasEncrypted ? encryptedMessage : undefined,
+    messageId: msgId,
+    timestamp: new Date().toISOString(),
+  });
+
+  io.to(from).emit("chat:delivered", { messageId: msgId }); // Update sender's sending bubble
+  
+  console.log(`📨 Group: ${mask(from)} → ${group}`);
+
+  try {
+    const groupDoc = await Group.findOne({ name: group }).lean();
+    if (!groupDoc) return;
+
+    let viewOnceUrl = null;
+    if (hasPlain && message && message.includes('"isViewOnce":true')) {
+      try {
+        const match = message.match(/"url":"(.*?)"/);
+        if (match) viewOnceUrl = match[1];
+      } catch (e) {}
+    }
+
+    groupSeen.set(msgId, {
+      totalMembers: groupDoc.members.length,
+      seenCount: 1,
+      senderId: from,
+      groupId: group,
+      viewOnceUrl: viewOnceUrl,
+      createdAt: Date.now(),
+    });
+
+    const offlineMembers = groupDoc.members.filter((m) => m !== from && !onlineUsers.has(m));
+
+    for (const member of offlineMembers) {
+      await PendingMessage.findOneAndUpdate(
+        { messageId: msgId, to: member },
+        { to: member, from, groupName: group, encryptedMessage, message, messageId: msgId, chatType: "group" },
+        { upsert: true, new: true }
+      );
+      const recipient = await User.findOne({ username: member }, { fcmToken: 1 });
+      await sendPush({
+        fcmToken: recipient?.fcmToken,
+        fromUser: from,
+        chatId: group,
+        chatType: "group",
+      });
+    }
+  } catch (err) {
+    console.error("⚠️  Group delivery error:", err.message);
+  }
+}
+
+uploadEvents.on("fileMessageUploaded", (data) => {
+  if (data.chatType === "group") {
+    deliverGroupMessage({
+      group: data.chatId,
+      from: data.from,
+      message: data.message,
+      messageId: data.messageId
+    });
+  } else {
+    deliverPrivateMessage({
+      to: data.chatId,
+      from: data.from,
+      message: data.message,
+      messageId: data.messageId,
+      chatId: data.chatId
+    });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// HELPER: DELIVER MESSAGES
+// ═════════════════════════════════════════════════════════════════════════════
+
+async function deliverPrivateMessage({ to, from, message, encryptedMessage, messageId, chatId }) {
+  if (!to) return;
+  const hasEncrypted = encryptedMessage != null && encryptedMessage !== "";
+  const hasPlain = message != null && message !== "";
+  if (!hasEncrypted && !hasPlain) return;
+
+  const msgId = messageId || `${Date.now()}_${from}`;
+  const payload = { from, message, encryptedMessage, messageId: msgId, timestamp: new Date().toISOString() };
+
+  console.log(`📨 Private: ${mask(from)} → ${mask(to)}`);
+
+  if (onlineUsers.has(to)) {
+    // Online -> deliver directly
+    io.to(to).emit("private_message", payload);
+    io.to(from).emit("chat:delivered", { messageId: msgId });
+    if (activeChats.get(to) === (chatId || from)) {
+      io.to(from).emit("chat:seen", { messageId: msgId });
+    } else {
+      const recipient = await User.findOne({ username: to }, { fcmToken: 1 });
+      await sendPush({
+        fcmToken: recipient?.fcmToken,
+        fromUser: from,
+        chatId: from,
+        chatType: "private",
+      });
+    }
+  } else {
+    // Offline → store + FCM
+    if (hasEncrypted || hasPlain) {
+      try {
+        await PendingMessage.findOneAndUpdate(
+          { messageId: msgId },
+          { to, from, encryptedMessage, message, messageId: msgId, chatType: "private" },
+          { upsert: true, new: true }
+        );
+        const recipient = await User.findOne({ username: to }, { fcmToken: 1 });
+        await sendPush({
+          fcmToken: recipient?.fcmToken,
+          fromUser: from,
+          chatId: from,
+          chatType: "private",
+        });
+        console.log(`💾 Stored private pending for ${mask(to)}`);
+      } catch (err) {
+        console.error("⚠️  Private store error:", err.message);
+      }
+    }
+  }
+}
+
+async function deliverGroupMessage({ group, from, message, encryptedMessage, messageId }) {
+  if (!group) return;
+  const hasEncrypted = encryptedMessage != null && encryptedMessage !== "";
+  const hasPlain = message != null && message !== "";
+  if (!hasEncrypted && !hasPlain) return;
+
+  const msgId = messageId || `${Date.now()}_${Math.random()}`;
+
+  io.to(group).emit("group_message", {
+    group,
+    from,
+    message: hasPlain ? message : undefined,
+    encryptedMessage: hasEncrypted ? encryptedMessage : undefined,
+    messageId: msgId,
+    timestamp: new Date().toISOString(),
+  });
+
+  console.log(`📨 Group: ${mask(from)} → ${group}`);
+
+  try {
+    const groupDoc = await Group.findOne({ name: group }).lean();
+    if (!groupDoc) return;
+
+    let viewOnceUrl = null;
+    if (hasPlain && message && message.includes('"isViewOnce":true')) {
+      try {
+        const match = message.match(/"url":"(.*?)"/);
+        if (match) viewOnceUrl = match[1];
+      } catch (e) {}
+    }
+
+    groupSeen.set(msgId, {
+      totalMembers: groupDoc.members.length,
+      seenCount: 1,
+      senderId: from,
+      groupId: group,
+      viewOnceUrl: viewOnceUrl,
+      createdAt: Date.now(),
+    });
+
+    const offlineMembers = groupDoc.members.filter((m) => m !== from && !onlineUsers.has(m));
+
+    for (const member of offlineMembers) {
+      await PendingMessage.findOneAndUpdate(
+        { messageId: msgId, to: member },
+        { to: member, from, groupName: group, encryptedMessage, message, messageId: msgId, chatType: "group" },
+        { upsert: true, new: true }
+      );
+      const recipient = await User.findOne({ username: member }, { fcmToken: 1 });
+      await sendPush({
+        fcmToken: recipient?.fcmToken,
+        fromUser: from,
+        chatId: group,
+        chatType: "group",
+      });
+    }
+  } catch (err) {
+    console.error("⚠️  Group delivery error:", err.message);
+  }
+}
+
+uploadEvents.on("fileMessageUploaded", (data) => {
+  if (data.chatType === "group") {
+    deliverGroupMessage({
+      group: data.chatId,
+      from: data.from,
+      message: data.message,
+      messageId: data.messageId
+    });
+  } else {
+    deliverPrivateMessage({
+      to: data.chatId, // For private chat, chatId is the recipient username
+      from: data.from,
+      message: data.message,
+      messageId: data.messageId,
+      chatId: data.from // to trigger correct activeChats matching if needed
+    });
+  }
+});
 
 // ═════════════════════════════════════════════════════════════════════════════
 // SOCKET.IO
@@ -344,54 +614,14 @@ io.on("connection", (socket) => {
 
   // ── PRIVATE MESSAGE ───────────────────────────────────────────────────────
   socket.on("private_message", async ({ to, from, message, encryptedMessage, messageId, chatId }) => {
-    if (!to) return;
-    const sender = socket.username || from;
-    const hasEncrypted = encryptedMessage != null && encryptedMessage !== "";
-    const hasPlain = message != null && message !== "";
-    if (!hasEncrypted && !hasPlain) return;
-
-    const msgId = messageId || `${Date.now()}_${sender}`;
-    const payload = { from: sender, message, encryptedMessage, messageId: msgId, timestamp: new Date().toISOString() };
-
-    console.log(`📨 Private: ${mask(sender)} → ${mask(to)}`);
-
-    if (onlineUsers.has(to)) {
-      // Online -> deliver directly
-      io.to(to).emit("private_message", payload);
-      io.to(sender).emit("chat:delivered", { messageId: msgId });
-      if (activeChats.get(to) === (chatId || sender)) {
-        io.to(sender).emit("chat:seen", { messageId: msgId });
-      } else {
-        const recipient = await User.findOne({ username: to }, { fcmToken: 1 });
-        await sendPush({
-          fcmToken: recipient?.fcmToken,
-          fromUser: sender,
-          chatId: sender,
-          chatType: "private",
-        });
-      }
-    } else {
-      // Offline → store + FCM
-      if (hasEncrypted) {
-        try {
-          await PendingMessage.findOneAndUpdate(
-            { messageId: msgId },
-            { to, from: sender, encryptedMessage, messageId: msgId, chatType: "private" },
-            { upsert: true, new: true }
-          );
-          const recipient = await User.findOne({ username: to }, { fcmToken: 1 });
-          await sendPush({
-            fcmToken: recipient?.fcmToken,
-            fromUser: sender,
-            chatId: sender,        // ✅ private: chatId = sender so Flutter opens private chat
-            chatType: "private",
-          });
-          console.log(`💾 Stored private pending for ${mask(to)}`);
-        } catch (err) {
-          console.error("⚠️  Private store error:", err.message);
-        }
-      }
-    }
+    await deliverPrivateMessage({
+      to,
+      from: socket.username || from,
+      message,
+      encryptedMessage,
+      messageId,
+      chatId
+    });
   });
 
   // ── GROUP MESSAGE ─────────────────────────────────────────────────────────
