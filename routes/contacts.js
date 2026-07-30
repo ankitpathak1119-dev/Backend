@@ -2,6 +2,7 @@ import express from "express";
 import User from "../models/User.js";
 import Contact from "../models/Contact.js";
 import ContactRequest from "../models/ContactRequest.js";
+import { getMessaging } from "firebase-admin/messaging";
 
 const routerFactory = (io) => {
   const router = express.Router();
@@ -23,6 +24,29 @@ const routerFactory = (io) => {
       if (pending) return res.status(409).json({ error: "Request already sent" });
 
       await ContactRequest.create({ from, to });
+
+      // Send Push Notification
+      try {
+        if (b.fcmToken) {
+          const fcmMessaging = getMessaging();
+          await fcmMessaging.send({
+            token: b.fcmToken,
+            notification: {
+              title: "New Contact Request",
+              body: `${from} sent you a contact request`
+            },
+            data: {
+              type: "contact_request",
+              fromUser: from,
+            },
+            android: { priority: "high" },
+            apns: { payload: { aps: { contentAvailable: true } } },
+          });
+        }
+      } catch (err) {
+        console.error("❌ Failed to send contact request FCM:", err);
+      }
+
       return res.json({ message: "Request sent" });
     } catch {
       return res.status(500).json({ error: "Server error" });
