@@ -263,6 +263,7 @@ async function deliverGroupMessage({ group, from, message, encryptedMessage, mes
     groupSeen.set(msgId, {
       totalMembers: groupDoc.members.length,
       seenCount: 1,
+      seenBy: [{ username: from, timestamp: Date.now() }],
       senderId: from,
       groupId: group,
       viewOnceUrl: viewOnceUrl,
@@ -526,6 +527,7 @@ io.on("connection", (socket) => {
       groupSeen.set(msgId, {
         totalMembers: groupDoc.members.length,
         seenCount: 1,
+        seenBy: [{ username: sender, timestamp: Date.now() }],
         senderId: sender,
         groupId: group,
         viewOnceUrl: viewOnceUrl,
@@ -731,20 +733,25 @@ function asyncDeleteViewOnceFile(fileUrl) {
 function _incrementGroupSeen(username, messageId) {
   const data = groupSeen.get(messageId);
   if (!data) return;
-  data.seenCount++;
+  
+  if (!data.seenBy.some(u => u.username === username)) {
+    data.seenBy.push({ username, timestamp: Date.now() });
+    data.seenCount = data.seenBy.length;
+  }
+
   if (data.seenCount >= data.totalMembers) {
-    io.to(data.senderId).emit("chat:seen", { messageId, status: "all" });
+    io.to(data.senderId).emit("chat:seen", { messageId, status: "all", seenBy: data.seenBy });
     if (data.viewOnceUrl) asyncDeleteViewOnceFile(data.viewOnceUrl);
     groupSeen.delete(messageId);
   } else {
-    io.to(data.senderId).emit("chat:seen", { messageId, status: "partial" });
+    io.to(data.senderId).emit("chat:seen", { messageId, status: "partial", seenBy: data.seenBy });
   }
 }
 function _handleMemberDisconnect(username) {
   for (const [mid, data] of groupSeen.entries()) {
     data.totalMembers = Math.max(data.seenCount + 1, data.totalMembers - 1);
     if (data.seenCount >= data.totalMembers) {
-      io.to(data.senderId).emit("chat:seen", { messageId: mid, status: "all" });
+      io.to(data.senderId).emit("chat:seen", { messageId: mid, status: "all", seenBy: data.seenBy });
       if (data.viewOnceUrl) asyncDeleteViewOnceFile(data.viewOnceUrl);
       groupSeen.delete(mid);
     }
