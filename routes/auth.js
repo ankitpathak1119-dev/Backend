@@ -318,4 +318,48 @@ router.post("/change-username", async (req, res) => {
   }
 });
 
+// ── UPLOAD PUBLIC KEY ─────────────────────────────────────────────────────────
+router.post("/keys/upload", async (req, res) => {
+  try {
+    const { username, publicKey } = req.body;
+    if (!username || !publicKey) {
+      return res.status(400).json({ success: false, message: "Missing username or publicKey" });
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    
+    const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.username !== username) {
+      return res.status(403).json({ success: false, message: "Forbidden" });
+    }
+
+    await User.updateOne({ username }, { $set: { publicKey } });
+    return res.json({ success: true, message: "Public key uploaded" });
+  } catch (err) {
+    console.error("❌ Key upload error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// ── GET PUBLIC KEY ────────────────────────────────────────────────────────────
+router.get("/keys/:username", async (req, res) => {
+  try {
+    const { username } = req.params;
+    const user = await User.findOne({ username }, { publicKey: 1, _id: 0 });
+    
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    return res.json({ success: true, publicKey: user.publicKey });
+  } catch (err) {
+    console.error("❌ Get key error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 export default router;

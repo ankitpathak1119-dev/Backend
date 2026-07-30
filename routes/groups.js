@@ -1,5 +1,6 @@
 import express from "express";
 import Group   from "../models/Group.js";
+import User    from "../models/User.js";
 
 const router = express.Router();
 
@@ -355,6 +356,26 @@ router.post("/remove-ownership", async (req, res) => {
   } catch (e) {
     console.error("Remove ownership error:", e);
     return res.status(500).json({ error: "Failed to remove ownership" });
+  }
+});
+
+// ── GET /keys/:groupName — fetch public keys for all members ─────────────────
+router.get("/keys/:groupName", async (req, res) => {
+  try {
+    const groupName = normalize(req.params.groupName);
+    const group = await Group.findOne({ name: groupName });
+    if (!group) return res.status(404).json({ error: "Group not found" });
+
+    const users = await User.find({ username: { $in: group.members } }, { username: 1, publicKey: 1, _id: 0 });
+    const keys = {};
+    users.forEach((u) => {
+      if (u.publicKey) keys[u.username] = u.publicKey;
+    });
+
+    return res.json({ success: true, keys });
+  } catch (e) {
+    console.error("Get group keys error:", e);
+    return res.status(500).json({ error: "Failed to fetch group keys" });
   }
 });
 
