@@ -689,6 +689,61 @@ io.on("connection", (socket) => {
     if (messageId && socket.username) _incrementGroupSeen(socket.username, messageId);
   });
 
+  // ── WEBRTC SIGNALING ──────────────────────────────────────────────────────
+  socket.on("call_user", (data) => {
+    const { to, offer, type } = data;
+    const recipientSocket = onlineUsers.get(to);
+    if (recipientSocket) {
+      io.to(recipientSocket).emit("incoming_call", {
+        from: socket.username,
+        offer,
+        type: type || 'video'
+      });
+    }
+  });
+
+  socket.on("call_answered", (data) => {
+    const { to, answer } = data;
+    const callerSocket = onlineUsers.get(to);
+    if (callerSocket) {
+      io.to(callerSocket).emit("call_answered", {
+        from: socket.username,
+        answer
+      });
+    }
+  });
+
+  socket.on("call_rejected", (data) => {
+    const { to } = data;
+    const callerSocket = onlineUsers.get(to);
+    if (callerSocket) {
+      io.to(callerSocket).emit("call_rejected", {
+        from: socket.username
+      });
+    }
+  });
+
+  socket.on("webrtc_ice_candidate", (data) => {
+    const { to, candidate } = data;
+    const peerSocket = onlineUsers.get(to);
+    if (peerSocket) {
+      io.to(peerSocket).emit("webrtc_ice_candidate", {
+        from: socket.username,
+        candidate
+      });
+    }
+  });
+
+  socket.on("end_call", (data) => {
+    const { to } = data;
+    const peerSocket = onlineUsers.get(to);
+    if (peerSocket) {
+      io.to(peerSocket).emit("call_ended", {
+        from: socket.username
+      });
+    }
+  });
+
   // ── DISCONNECT ────────────────────────────────────────────────────────────
   socket.on("disconnect", () => {
     if (socket.username && onlineUsers.get(socket.username) === socket.id) {
