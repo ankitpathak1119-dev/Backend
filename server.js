@@ -759,6 +759,30 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("request_video", (data) => {
+    const { to } = data;
+    const peerSocket = onlineUsers.get(to);
+    if (peerSocket) {
+      io.to(peerSocket).emit("request_video", { from: socket.username });
+    }
+  });
+
+  socket.on("accept_video", (data) => {
+    const { to } = data;
+    const peerSocket = onlineUsers.get(to);
+    if (peerSocket) {
+      io.to(peerSocket).emit("accept_video", { from: socket.username });
+    }
+  });
+
+  socket.on("reject_video", (data) => {
+    const { to } = data;
+    const peerSocket = onlineUsers.get(to);
+    if (peerSocket) {
+      io.to(peerSocket).emit("reject_video", { from: socket.username });
+    }
+  });
+
   // ── DISCONNECT ────────────────────────────────────────────────────────────
   socket.on("disconnect", () => {
     if (socket.username && onlineUsers.get(socket.username) === socket.id) {
