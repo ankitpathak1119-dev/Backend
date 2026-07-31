@@ -11,7 +11,7 @@ const router = express.Router();
  * DELETE /auth/delete-account
  * Permanently deletes user account and ALL related data.
  */
-router.delete("/delete-account", async (req, res) => {
+router.post("/delete-account", async (req, res) => {
   try {
     const { username, password } = req.body;
 
