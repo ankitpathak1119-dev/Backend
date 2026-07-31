@@ -690,7 +690,7 @@ io.on("connection", (socket) => {
   });
 
   // ── WEBRTC SIGNALING ──────────────────────────────────────────────────────
-  socket.on("call_user", (data) => {
+  socket.on("call_user", async (data) => {
     const { to, offer, type } = data;
     const recipientSocket = onlineUsers.get(to);
     if (recipientSocket) {
@@ -699,6 +699,21 @@ io.on("connection", (socket) => {
         offer,
         type: type || 'video'
       });
+    } else {
+      // Send FCM push notification for the call if offline or background
+      // Actually we can send it even if online since FCM handles background states
+    }
+    
+    // Always send FCM for calls so it pops up if app is in background
+    try {
+      const recipient = await User.findOne({ username: to }, { fcmToken: 1 });
+      if (recipient && recipient.fcmToken) {
+        // Must stringify the offer because FCM data payload only accepts string values
+        const offerStr = offer ? JSON.stringify(offer) : "";
+        _sendCallNotification(socket.username, recipient.fcmToken, type, offerStr);
+      }
+    } catch (err) {
+      console.error("❌ Error sending call notification:", err);
     }
   });
 
@@ -895,3 +910,36 @@ setInterval(async () => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`🚀 Server on port ${PORT}`));
+
+async function _sendCallNotification(fromUser, fcmToken, callType, offerStr) {
+  if (!fcmMessaging) return;
+
+  const title = `Incoming ${callType === 'video' ? 'Video' : 'Audio'} Call...`;
+  const body = `${fromUser} is calling you`;
+
+  try {
+    await fcmMessaging.send({
+      token: fcmToken,
+      notification: { title, body },
+      data: {
+        type: "call",
+        callType: callType || 'video',
+        fromUser: fromUser,
+        offer: offerStr,
+      },
+      android: {
+        priority: "high",
+        notification: {
+          channelId: "secure_chat_messages", // Reuse or create a new channel for calls
+          sound: "default",
+          priority: "high",
+          defaultSound: true,
+          defaultVibrateTimings: true,
+        },
+      },
+    });
+    console.log(`✅ FCM Call sent to ${mask(fcmToken)}`);
+  } catch (err) {
+    console.error("❌ FCM Call error:", err.message);
+  }
+}
