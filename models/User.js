@@ -9,6 +9,8 @@ const userSchema = new mongoose.Schema({
   recovery_phrase: { type: String, required: true },   // ✅ consistent field name
   fcmToken:        { type: String, default: null },
   publicKey:       { type: String, default: null },
+  avatar:          { type: String, default: null },
+  bio:             { type: String, default: 'Hey there! I am using SecureChat.' },
 });
 
 // ── Auto-hash password before save ───────────────────────────────────────────

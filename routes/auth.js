@@ -362,4 +362,43 @@ router.get("/keys/:username", async (req, res) => {
   }
 });
 
+// ── UPDATE PROFILE ───────────────────────────────────────────────────────────
+router.post("/update-profile", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+    const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "fallback_secret");
+    const username = decoded.username;
+
+    const { bio, avatar } = req.body;
+    const updateData = {};
+    if (bio !== undefined) updateData.bio = bio;
+    if (avatar !== undefined) updateData.avatar = avatar;
+
+    await User.updateOne({ username }, { $set: updateData });
+    return res.json({ success: true, message: "Profile updated" });
+  } catch (err) {
+    console.error("Profile update error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+// ── GET PROFILE ─────────────────────────────────────────────────────────────
+router.get("/profile/:username", async (req, res) => {
+  try {
+    const { username } = req.params;
+    const user = await User.findOne({ username }, { bio: 1, avatar: 1, _id: 0 });
+    
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    return res.json({ success: true, bio: user.bio, avatar: user.avatar });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 export default router;
