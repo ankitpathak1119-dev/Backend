@@ -9,7 +9,7 @@ const uploadedFileSchema = new mongoose.Schema({
   size:      { type: Number, default: 0 },
   from:      { type: String, required: true, index: true }, // who uploaded
   chatId:    { type: String, required: true, index: true }, // peer username or group name
-  chatType:  { type: String, enum: ["private", "group"], default: "private" },
+  chatType:  { type: String, enum: ["private", "group", "profile"], default: "private" },
   createdAt: { type: Date, default: Date.now },
   // Safety: auto-delete after 24 hours even if chat_close missed
   expiresAt: {
