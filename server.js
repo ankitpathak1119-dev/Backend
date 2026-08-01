@@ -667,7 +667,7 @@ io.on("connection", (socket) => {
 
   // ── PROFILE ─────────────────────────────────────────────────────────────────
   socket.on("update_profile", ({ username, bio, avatarUrl }) => {
-    socket.broadcast.emit("profile_updated", { username, bio, avatarUrl });
+    io.emit("profile_updated", { username, bio, avatarUrl });
   });
 
   // ── TYPING ────────────────────────────────────────────────────────────────
