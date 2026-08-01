@@ -111,6 +111,7 @@ const onlineUsers = new Map(); // username → socketId
 const activeChats = new Map(); // username → chatId   (private OR group name)
 const joinedGroupsBySocket = new Map(); // socketId → Set<groupName>
 const groupSeen = new Map(); // messageId → { totalMembers, seenCount, ... }
+const activeOffers = new Map(); // calleeUsername → { offer, from, type }
 
 global.onlineUsers = onlineUsers;
 
@@ -400,8 +401,19 @@ io.on("connection", (socket) => {
       if (pending.length > 0)
         console.log(`📬 Delivered ${pending.length} pending → ${mask(username)}`);
 
-    } catch (err) {
-      console.error("❌ join error:", err.message);
+      await PendingMessage.deleteMany({ to: username });
+
+      // ✅ Send any pending WebRTC call offer
+      const pendingOffer = activeOffers.get(username);
+      if (pendingOffer) {
+        socket.emit("incoming_call", {
+          from: pendingOffer.from,
+          offer: pendingOffer.offer,
+          type: pendingOffer.type
+        });
+      }
+    } catch (e) {
+      console.error("JOIN ERROR:", e);
       socket.disconnect();
     }
   });
@@ -697,6 +709,10 @@ io.on("connection", (socket) => {
   // ── WEBRTC SIGNALING ──────────────────────────────────────────────────────
   socket.on("call_user", async (data) => {
     const { to, offer, type } = data;
+    
+    // Store offer in memory for when the callee connects/wakes up
+    activeOffers.set(to, { offer, from: socket.username, type: type || 'video' });
+    
     const recipientSocket = onlineUsers.get(to);
     if (recipientSocket) {
       io.to(recipientSocket).emit("incoming_call", {
@@ -713,9 +729,8 @@ io.on("connection", (socket) => {
     try {
       const recipient = await User.findOne({ username: to }, { fcmToken: 1 });
       if (recipient && recipient.fcmToken) {
-        // Must stringify the offer because FCM data payload only accepts string values
-        const offerStr = offer ? JSON.stringify(offer) : "";
-        _sendCallNotification(socket.username, recipient.fcmToken, type, offerStr);
+        // We do NOT send the offer in FCM payload to avoid the 4KB limit.
+        _sendCallNotification(socket.username, recipient.fcmToken, type, "");
       }
     } catch (err) {
       console.error("❌ Error sending call notification:", err);
@@ -724,6 +739,7 @@ io.on("connection", (socket) => {
 
   socket.on("call_answered", (data) => {
     const { to, answer } = data;
+    activeOffers.delete(socket.username); // Clear pending offer
     const callerSocket = onlineUsers.get(to);
     if (callerSocket) {
       io.to(callerSocket).emit("call_answered", {
@@ -735,6 +751,7 @@ io.on("connection", (socket) => {
 
   socket.on("call_rejected", (data) => {
     const { to } = data;
+    activeOffers.delete(socket.username); // Clear pending offer
     const callerSocket = onlineUsers.get(to);
     if (callerSocket) {
       io.to(callerSocket).emit("call_rejected", {
@@ -756,6 +773,10 @@ io.on("connection", (socket) => {
 
   socket.on("end_call", (data) => {
     const { to } = data;
+    // Clear offer for both parties just in case
+    activeOffers.delete(to);
+    activeOffers.delete(socket.username);
+    
     const peerSocket = onlineUsers.get(to);
     if (peerSocket) {
       io.to(peerSocket).emit("call_ended", {
@@ -954,7 +975,7 @@ async function _sendCallNotification(fromUser, fcmToken, callType, offerStr) {
         type: "call",
         callType: callType || 'video',
         fromUser: fromUser,
-        offer: offerStr,
+        offer: "", // Do not send offer here to avoid 4KB limit
       },
       android: {
         priority: "high",
