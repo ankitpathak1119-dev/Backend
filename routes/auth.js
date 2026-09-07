@@ -29,7 +29,7 @@ router.post("/register", async (req, res) => {
     const newUser = new User({ username, password, recovery_phrase });
     await newUser.save();
 
-    const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: "7d" });
+    const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: "365d" });
 
     return res.status(201).json({
       success: true,
@@ -62,7 +62,7 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
-    const token = jwt.sign({ username: user.username }, JWT_SECRET, { expiresIn: "7d" });
+    const token = jwt.sign({ username: user.username }, JWT_SECRET, { expiresIn: "365d" });
 
     return res.json({
       success: true,
@@ -298,7 +298,7 @@ router.post("/change-username", async (req, res) => {
       }
     } catch (_) {}
 
-    const token = jwt.sign({ username: newU }, JWT_SECRET, { expiresIn: "7d" });
+    const token = jwt.sign({ username: newU }, JWT_SECRET, { expiresIn: "365d" });
 
     return res.json({
       success: true,
